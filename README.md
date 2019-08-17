@@ -1,0 +1,1 @@
+This repository contains all the necessary files and documentation for the development and validation of a human-machine preference scale.
