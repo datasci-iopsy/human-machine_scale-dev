@@ -135,9 +135,9 @@ ScaleScores.corr <- rcorr(as.matrix(ScaleScores))
 DescriptiveStats <- cbind(SS.mean_sd$mean, SS.mean_sd$sd, ScaleScores.corr$r)
      DescriptiveStats <- `colnames<-`(DescriptiveStats, c("Mean", "SD", "HUM",
                                                           "SA", "LS"))
-#write out the correlation table
-write.csv(DescriptiveStats, 
-          "~/Dropbox/Graduate Courses/Psychometrics/Final Project/Project Data Files/Construct Correlations.csv")
-
-#clean up everything
-rm(list = ls())
+# #write out the correlation table
+# write.csv(DescriptiveStats, 
+#           "~/Dropbox/Graduate Courses/Psychometrics/Final Project/Project Data Files/Construct Correlations.csv")
+# 
+# #clean up everything
+# rm(list = ls())
