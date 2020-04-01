@@ -1,11 +1,7 @@
 rm(list = ls()) #keep env cln
 
-#it's a library, so shhh!
-shhh = function(...){
-    suppressWarnings(
-        suppressPackageStartupMessages(base::library(...))
-    )
-}
+#import custom functions
+source("funs.R")
 
 #load libraries
 shhh(tidyverse)
@@ -15,28 +11,22 @@ shhh(psych)
 readFile = readLines("../data/dat_cln.csv")
 datRaw = read.csv(textConnection(readFile[-2]), header = T, sep = ",")
 
-#function to recode chr/fcts to nums
-unfactorise <- function(x) {
-      case_when(x %in% c("Strongly disagree") ~ 1,
-                x %in% c("Somewhat disagree") ~ 2,
-                x %in% c("Neither agree nor disagree") ~ 3,
-                x %in% c("Somewhat agree") ~ 4,
-                x %in% c("Strongly agree") ~ 5)
-  }
-
-#create df w/ unfactorised values
+#call 'unfactorise' function to recode chr/fcts to nums
 dat = data.frame(sapply(datRaw[, 1:32], unfactorise))
-head(dat)
 
 #re-score reverse-coded items (5-point Likert-type scale)
-datFnl = mutate_at(dat, vars(contains("_R")), list(~ 6 - .)) #subtract 6
+datVars = mutate_at(dat, vars(contains("_R")), list(~ 6 - .)) #subtract 6
 
 #list of construct dfs
 datList = list(
-  hum = select(datFnl, starts_with("HUM")), 
-  sa = select(datFnl, starts_with("SA")), 
-  ls = select(datFnl, starts_with("LS"))
+  hum = select(datVars, starts_with("HUM")), 
+  sa = select(datVars, starts_with("SA")), 
+  ls = select(datVars, starts_with("LS"))
+  #demo = select(datRaw, .data$POL:.data$EDU)
   )
+
+#keep env cln
+rm(datRaw, dat, readFile)
 
 # Correlation Analysis
 shhh(GGally)
@@ -80,6 +70,16 @@ corrPlots[["pearson"]] = lapply(
   }
 )
 
+# # export pearson corr plots
+# for (i in 1:length(names(corrPlots[["pearson"]]))) {
+# 
+#   corrPlots[["pearson"]][i]
+#   ggsave(corrPlots[["pearson"]][[i]],
+#          file = paste0("../figs/corrPlots-pearson/",
+#                        names(corrPlots[["pearson"]][i]),
+#                        ".png")
+#          )}
+
 corrPlots[["poly"]] = lapply(
   corrList[["poly"]], 
   function(df) {
@@ -102,10 +102,20 @@ corrPlots[["poly"]] = lapply(
   }
 )
 
+# # export poly corr plots
+# for (i in 1:length(names(corrPlots[["poly"]]))) {
+#   
+#   corrPlots[["poly"]][i]
+#   ggsave(corrPlots[["poly"]][[i]],
+#          file = paste0("../figs/corrPlots-poly/",
+#                        names(corrPlots[["poly"]][i]),
+#                        ".png")
+#   )}
+
 # Exploratory Factor Analysis
 
 #parallel analysis of "hum" construct items
-fa.parallel(datList[["hum"]], fm = "wls", fa = "both", 
+fa.parallel(datList[["hum"]], fm = "wls", fa = "fa", 
             main = "Scree Plot of Human-Machine Items", 
             ylabel = "Eigenvalues of Factors")
   #suggestions: fa = 4 factors & pc = 3..."theoreticized" a 1-factor scale
@@ -126,38 +136,37 @@ efa_mods_fun = function(x, n_models = NULL, ...){
 }
 
 #run series of models 
-modsPolyWLS = efa_mods_fun(datList[["hum"]], n_models = 5) #up to 5-factor solutions
+modsEFA = efa_mods_fun(datList[["hum"]], n_models = 5) #up to 5-factor solutions
 
 modsFit = list(
   hum = round(
     data.frame(
-      a = c(modsPolyWLS[[1]]$STATISTIC, modsPolyWLS[[2]]$STATISTIC, 
-            modsPolyWLS[[3]]$STATISTIC, modsPolyWLS[[4]]$STATISTIC, 
-            modsPolyWLS[[5]]$STATISTIC), 
+      a = c(modsEFA[[1]]$STATISTIC, modsEFA[[2]]$STATISTIC, 
+            modsEFA[[3]]$STATISTIC, modsEFA[[4]]$STATISTIC, 
+            modsEFA[[5]]$STATISTIC), 
       
-      b = c(modsPolyWLS[[1]]$TLI, modsPolyWLS[[2]]$TLI, 
-            modsPolyWLS[[3]]$TLI, modsPolyWLS[[4]]$TLI, 
-            modsPolyWLS[[5]]$TLI), 
+      b = c(modsEFA[[1]]$TLI, modsEFA[[2]]$TLI, 
+            modsEFA[[3]]$TLI, modsEFA[[4]]$TLI, 
+            modsEFA[[5]]$TLI), 
       
-      c = c(modsPolyWLS[[1]]$BIC, modsPolyWLS[[2]]$BIC, 
-            modsPolyWLS[[3]]$BIC, modsPolyWLS[[4]]$BIC, 
-            modsPolyWLS[[5]]$BIC), 
+      c = c(modsEFA[[1]]$BIC, modsEFA[[2]]$BIC, 
+            modsEFA[[3]]$BIC, modsEFA[[4]]$BIC, 
+            modsEFA[[5]]$BIC), 
       
-      d = c(modsPolyWLS[[1]]$RMSEA[1], modsPolyWLS[[2]]$RMSEA[1], 
-            modsPolyWLS[[3]]$RMSEA[1], modsPolyWLS[[4]]$RMSEA[1], 
-            modsPolyWLS[[5]]$RMSEA[1]), 
+      d = c(modsEFA[[1]]$RMSEA[1], modsEFA[[2]]$RMSEA[1], 
+            modsEFA[[3]]$RMSEA[1], modsEFA[[4]]$RMSEA[1], 
+            modsEFA[[5]]$RMSEA[1]), 
       
-      e = c(modsPolyWLS[[1]]$Vaccounted[2], 
-            modsPolyWLS[[2]]$Vaccounted[3, 2], 
-            modsPolyWLS[[3]]$Vaccounted[3, 3],
-            modsPolyWLS[[4]]$Vaccounted[3, 4], 
-            modsPolyWLS[[5]]$Vaccounted[3, 5]), 
+      e = c(modsEFA[[1]]$Vaccounted[2], modsEFA[[2]]$Vaccounted[3, 2], 
+            modsEFA[[3]]$Vaccounted[3, 3], modsEFA[[4]]$Vaccounted[3, 4], 
+            modsEFA[[5]]$Vaccounted[3, 5]), 
       
       row.names = c('Model 1', 'Model 2', 'Model 3', 'Model 4', 'Model 5')
       ), 
     2))
 modsFit
 
+#visualize table
 library(kableExtra) #masks dplyr::group_rows
 library(tibble)
 
@@ -186,23 +195,25 @@ modsFit[["hum"]] %>%
     index = c('Human-Machine Preference' = 5),
     latex_gap_space = '.70em')
 
-#factor loadings of each model - loop
-# loadings_l = list()
-for (i in 1:length(mods)) { 
-  mods[[i]]$loadings %>% 
-    print(sort = F, cutoff = .4)
+fa.diagram(modsEFA[[1]], main = "WLS using Poly", digits = 3, cut = .50)
+
+#factor loadings of each model
+modsEFA_loadings = list()
+
+#loop
+for (i in seq_along(modsEFA)) { 
+  modsEFA_loadings[[i]] = rownames_to_column(
+    round(data.frame(
+      modsEFA[[i]][["loadings"]][]), 3),  
+    var = "Item") %>% 
+    gather(key = "Factor", value = "Loading", -1)
 }
 
-#recursion...
-lapply(mods, function(x)
-  print(x[["loadings"]][])
-  )
-
 #scale was theorized to be 1 factor...rm items with low loadings (i.e., < .4)
-humNew = datList[["hum"]][, -c(4, 5, 12)]
+datList[["humNew"]] = select_at(datList[["hum"]], vars(matches("_R")))
 
-#add new "hum" items to list of dfs
-datList = append(datList, list("humNew" = humNew), after = 1)
+# #add new "hum" items to list of dfs
+# datList = append(datList, list("humNew" = humNew), after = 1)
 
 #run EFA w/ 1-factor solution using df w/ redacted items
 mod_humNew = efa_mods_fun(datList[["humNew"]], n_models = 1)
