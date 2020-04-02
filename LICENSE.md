@@ -1,1 +1,1 @@
-Copyright © 2020 dkgreen24
+Copyright © 2020 Demetrius K. Green (dkgreen24)
