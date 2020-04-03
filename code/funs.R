@@ -1,7 +1,7 @@
 #functions
 
 #it's a library, so shhh!
-shhh = function(...){
+library = function(...){
     suppressWarnings(
         suppressPackageStartupMessages(base::library(...))
     )

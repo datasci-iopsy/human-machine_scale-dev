@@ -4,8 +4,8 @@ rm(list = ls()) #keep env cln
 source("funs.R")
 
 #load libraries
-shhh(tidyverse)
-shhh(psych)
+library(tidyverse)
+library(psych)
 
 #read in the data, skip the second row
 readFile = readLines("../data/dat_cln.csv")
@@ -28,18 +28,65 @@ datList = list(
 #keep env cln
 rm(datRaw, dat, readFile)
 
+#EDA - Viz
 # Correlation Analysis
-shhh(GGally)
+library(GGally)
+
+test = cor.test()
+
+## test custom corr function
+polyCorrs_func = function(data, mapping, ...) { #arg3: sizeRange = c(1, 5)
+  x = eval(mapping[["x"]], data)
+  y = eval(mapping[["y"]], data)
+  
+  poly = polychoric(x, y)
+  
+  r = unname(poly[["rho"]])
+  rt = format(r, digits = 2)[1]
+  
+  # plot the cor value
+  ggally_text(
+    label = as.character(rt), 
+    mapping = aes(),
+    xP = 0.5, yP = 0.5, 
+    # size = I(percent_of_range(cex * abs(r), sizeRange)),
+    #color = color,
+    ...
+  ) + 
+    # remove all the background stuff and wrap it with a dashed line
+    theme_classic() + 
+    theme(
+      panel.background = element_rect(
+        color = color, 
+        linetype = "longdash"
+      ), 
+      axis.line = element_blank(), 
+      axis.ticks = element_blank(), 
+      axis.text.y = element_blank(), 
+      axis.text.x = element_blank()
+    )
+}
+polyCorrs_func(datList[["sa"]], aes(SA1, SA2))
+
+#distributions
+ggpairs(
+  tibble(select_at(datVars, vars(matches("HUM")))),
+  upper = list(continuous = wrap(polychoric, smooth = TRUE)),
+  # diag = list(),
+  # lower = list(),
+  title = "Pairs Plot of Human-Machine Items"
+  )
 
 #list containing construct item correlations
 corrList = list()
 
-corrList[["pearson"]] = lapply(datList, stats::cor)
+corrList[["spearman"]] = lapply(datList, 
+                                function(r) stats::cor(r, method = "spearman"))
 corrList[["poly"]] = lapply(datList, function(r) psych::polychoric(r)$rho)
 
-corrList[["pearson"]][["all_vars"]] = cor(
-  cbind.data.frame(datList[[1]], datList[[2]], datList[[3]])
-  )
+corrList[["spearman"]][["all_vars"]] = cor(
+  cbind.data.frame(datList[[1]], datList[[2]], datList[[3]]), 
+  method = "spearman")
 
 corrList[["poly"]][["all_vars"]] = polychoric(
   cbind.data.frame(datList[[1]], datList[[2]], datList[[3]])
@@ -48,8 +95,8 @@ corrList[["poly"]][["all_vars"]] = polychoric(
 # plot function for correlations
 corrPlots = list()
 
-corrPlots[["pearson"]] = lapply(
-  corrList[["pearson"]], 
+corrPlots[["spearman"]] = lapply(
+  corrList[["spearman"]], 
   function(df) {
     ggcorr(
       data = NULL,
@@ -67,16 +114,15 @@ corrPlots[["pearson"]] = lapply(
       label_size = 2
     ) + 
       theme(legend.position = "none")
-  }
-)
+    })
 
 # # export pearson corr plots
-# for (i in 1:length(names(corrPlots[["pearson"]]))) {
+# for (i in 1:length(names(corrPlots[["spearman"]]))) {
 # 
-#   corrPlots[["pearson"]][i]
-#   ggsave(corrPlots[["pearson"]][[i]],
-#          file = paste0("../figs/corrPlots-pearson/",
-#                        names(corrPlots[["pearson"]][i]),
+#   corrPlots[["spearman"]][i]
+#   ggsave(corrPlots[["spearman"]][[i]],
+#          file = paste0("../figs/corrPlots-spearman/",
+#                        names(corrPlots[["spearman"]][i]),
 #                        ".png")
 #          )}
 
@@ -99,8 +145,7 @@ corrPlots[["poly"]] = lapply(
       label_size = 2
     ) + 
       theme(legend.position = "none")
-  }
-)
+    })
 
 # # export poly corr plots
 # for (i in 1:length(names(corrPlots[["poly"]]))) {
@@ -115,51 +160,59 @@ corrPlots[["poly"]] = lapply(
 # Exploratory Factor Analysis
 
 #parallel analysis of "hum" construct items
-fa.parallel(datList[["hum"]], fm = "wls", fa = "fa", 
-            main = "Scree Plot of Human-Machine Items", 
+fa.parallel(corrList[["poly"]][["hum"]], 
+            n.obs = nrow(datList[["hum"]]),
+            fm = "wls", 
+            fa = "fa", 
+            main = "Scree Plot of Items - Poly & WLS", 
             ylabel = "Eigenvalues of Factors")
   #suggestions: fa = 4 factors & pc = 3..."theoreticized" a 1-factor scale
 
 #function to run multiple efa models
-efa_mods_fun = function(x, n_models = NULL, ...){
+efa_mods_fun = function(r, n_models = NULL, ...){
     
-    if (!is.data.frame(x))
-        stop("x must be a dataframe with numeric values")
+    if (!is.matrix(r))
+        stop("r must be a matrix of covariances!")
     
     efa_models = list()
     
     for (i in seq(n_models)){
-        efa_models[[i]] = fa(x, nfactors = i, rotate = "oblimin", fm = "wls", 
-                             cor = "poly", max.iter = 5000)
+        efa_models[[i]] = fa(r, 
+                             n.obs = nrow(datVars),
+                             nfactors = i, 
+                             rotate = "oblimin", 
+                             # n.iter = 1000,
+                             fm = "wls", 
+                             max.iter = 5000)
     }
     return(efa_models)
 }
 
-#run series of models 
-modsEFA = efa_mods_fun(datList[["hum"]], n_models = 5) #up to 5-factor solutions
+#run series of models; 1:5-factor solutions
+modsEFA = efa_mods_fun(corrList[["spearman"]][["hum"]], n_models = 5)
 
 modsFit = list(
   hum = round(
     data.frame(
-      a = c(modsEFA[[1]]$STATISTIC, modsEFA[[2]]$STATISTIC, 
-            modsEFA[[3]]$STATISTIC, modsEFA[[4]]$STATISTIC, 
-            modsEFA[[5]]$STATISTIC), 
-      
-      b = c(modsEFA[[1]]$TLI, modsEFA[[2]]$TLI, 
-            modsEFA[[3]]$TLI, modsEFA[[4]]$TLI, 
-            modsEFA[[5]]$TLI), 
-      
-      c = c(modsEFA[[1]]$BIC, modsEFA[[2]]$BIC, 
-            modsEFA[[3]]$BIC, modsEFA[[4]]$BIC, 
-            modsEFA[[5]]$BIC), 
-      
-      d = c(modsEFA[[1]]$RMSEA[1], modsEFA[[2]]$RMSEA[1], 
-            modsEFA[[3]]$RMSEA[1], modsEFA[[4]]$RMSEA[1], 
-            modsEFA[[5]]$RMSEA[1]), 
-      
-      e = c(modsEFA[[1]]$Vaccounted[2], modsEFA[[2]]$Vaccounted[3, 2], 
-            modsEFA[[3]]$Vaccounted[3, 3], modsEFA[[4]]$Vaccounted[3, 4], 
-            modsEFA[[5]]$Vaccounted[3, 5]), 
+      a = c(modsEFA[[1]]$STATISTIC, modsEFA[[2]]$STATISTIC,
+            modsEFA[[3]]$STATISTIC, modsEFA[[4]]$STATISTIC,
+            modsEFA[[5]]$STATISTIC),
+
+      b = c(modsEFA[[1]]$TLI, modsEFA[[2]]$TLI,
+            modsEFA[[3]]$TLI, modsEFA[[4]]$TLI,
+            modsEFA[[5]]$TLI),
+
+      c = c(modsEFA[[1]]$BIC, modsEFA[[2]]$BIC,
+            modsEFA[[3]]$BIC, modsEFA[[4]]$BIC,
+            modsEFA[[5]]$BIC),
+
+      d = c(modsEFA[[1]]$RMSEA[1], modsEFA[[2]]$RMSEA[1],
+            modsEFA[[3]]$RMSEA[1], modsEFA[[4]]$RMSEA[1],
+            modsEFA[[5]]$RMSEA[1]),
+
+      e = c(modsEFA[[1]]$Vaccounted[2], modsEFA[[2]]$Vaccounted[3, 2],
+            modsEFA[[3]]$Vaccounted[3, 3], modsEFA[[4]]$Vaccounted[3, 4],
+            modsEFA[[5]]$Vaccounted[3, 5]),
       
       row.names = c('Model 1', 'Model 2', 'Model 3', 'Model 4', 'Model 5')
       ), 
@@ -195,7 +248,15 @@ modsFit[["hum"]] %>%
     index = c('Human-Machine Preference' = 5),
     latex_gap_space = '.70em')
 
-fa.diagram(modsEFA[[1]], main = "WLS using Poly", digits = 3, cut = .50)
+fa.diagram(modsEFA[[4]], main = "WLS using Poly", digits = 3, cut = 0)
+
+
+datList[["humBest"]] = select_at(datList[["hum"]], 
+                                 vars(matches("16_R$|^HUM3|_14")))
+
+modsEFA[["round2"]] = efa_mods_fun(cor(datList[["humBest"]], method = "spearman"), 
+                                   n_models = 3)
+
 
 #factor loadings of each model
 modsEFA_loadings = list()
@@ -210,7 +271,7 @@ for (i in seq_along(modsEFA)) {
 }
 
 #scale was theorized to be 1 factor...rm items with low loadings (i.e., < .4)
-datList[["humNew"]] = select_at(datList[["hum"]], vars(matches("_R")))
+datList[["humBest"]] = select_at(datList[["hum"]], vars(matches("_R")))
 
 # #add new "hum" items to list of dfs
 # datList = append(datList, list("humNew" = humNew), after = 1)
@@ -222,8 +283,9 @@ mod_humNew[[1]]$loadings #all loadings >= .40!
 # Data Viz
 
 #diagram of loadings
-fa.diagram(mod_humNew[[1]], 
-           main = "EFA 1-Factor Solution")
+fa.diagram(modsEFA[["round2"]][[1]], 
+           main = "EFA 1-Factor Solution", 
+           digits = 3)
 
 #df of loadings
 loadings = as.data.frame(mod_humNew[[1]]$loadings[]) %>%
@@ -256,3 +318,4 @@ alphas[["hum"]]$total[1:2] #human-machine alpha: .83
 alphas[["humNew"]]$total[1:2] #human-machine (dropped) alpha: .85!
 alphas[["ls"]]$total[1:2] #science alpha: .88
 alphas[["sa"]]$total[1:2] #satisfaction alpha: .89
+m
