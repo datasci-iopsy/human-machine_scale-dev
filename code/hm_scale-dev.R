@@ -36,12 +36,12 @@ test = cor.test()
 
 ## test custom corr function
 polyCorrs_func = function(data, mapping, ...) { #arg3: sizeRange = c(1, 5)
-  x = eval(mapping[["x"]], data)
-  y = eval(mapping[["y"]], data)
+  x = eval(mapping$x, data)
+  y = eval(mapping$y, data)
   
-  poly = polychoric(x, y)
+  poly = cor.test(x, y)
   
-  r = unname(poly[["rho"]])
+  r = unname(poly$estimate)
   rt = format(r, digits = 2)[1]
   
   # plot the cor value
