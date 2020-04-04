@@ -32,48 +32,12 @@ rm(datRaw, dat, readFile)
 # Correlation Analysis
 library(GGally)
 
-test = cor.test()
-
-## test custom corr function
-polyCorrs_func = function(data, mapping, ...) { #arg3: sizeRange = c(1, 5)
-  x = eval(mapping[["x"]], data)
-  y = eval(mapping[["y"]], data)
-  
-  poly = polychoric(x, y)
-  
-  r = unname(poly[["rho"]])
-  rt = format(r, digits = 2)[1]
-  
-  # plot the cor value
-  ggally_text(
-    label = as.character(rt), 
-    mapping = aes(),
-    xP = 0.5, yP = 0.5, 
-    # size = I(percent_of_range(cex * abs(r), sizeRange)),
-    #color = color,
-    ...
-  ) + 
-    # remove all the background stuff and wrap it with a dashed line
-    theme_classic() + 
-    theme(
-      panel.background = element_rect(
-        color = color, 
-        linetype = "longdash"
-      ), 
-      axis.line = element_blank(), 
-      axis.ticks = element_blank(), 
-      axis.text.y = element_blank(), 
-      axis.text.x = element_blank()
-    )
-}
-polyCorrs_func(datList[["sa"]], aes(SA1, SA2))
-
 #distributions
 ggpairs(
-  tibble(select_at(datVars, vars(matches("HUM")))),
-  upper = list(continuous = wrap(polychoric, smooth = TRUE)),
-  # diag = list(),
-  # lower = list(),
+  select_at(datVars, vars(matches("HUM"))),
+  upper = "blank",
+  diag = list(continuous = wrap("densityDiag")),
+  lower = list(continuous = wrap(ggally_smooth_lm)),
   title = "Pairs Plot of Human-Machine Items"
   )
 
@@ -189,35 +153,36 @@ efa_mods_fun = function(r, n_models = NULL, ...){
 }
 
 #run series of models; 1:5-factor solutions
-modsEFA = efa_mods_fun(corrList[["spearman"]][["hum"]], n_models = 5)
+modsEFA_rnd1 = efa_mods_fun(corrList[["poly"]][["hum"]], n_models = 5)
 
-modsFit = list(
+#fit indices - round 1
+modsFit_rnd1 = list(
   hum = round(
     data.frame(
-      a = c(modsEFA[[1]]$STATISTIC, modsEFA[[2]]$STATISTIC,
-            modsEFA[[3]]$STATISTIC, modsEFA[[4]]$STATISTIC,
-            modsEFA[[5]]$STATISTIC),
+      a = c(modsEFA_rnd1[[1]]$STATISTIC, modsEFA_rnd1[[2]]$STATISTIC,
+            modsEFA_rnd1[[3]]$STATISTIC, modsEFA_rnd1[[4]]$STATISTIC,
+            modsEFA_rnd1[[5]]$STATISTIC),
 
-      b = c(modsEFA[[1]]$TLI, modsEFA[[2]]$TLI,
-            modsEFA[[3]]$TLI, modsEFA[[4]]$TLI,
-            modsEFA[[5]]$TLI),
+      b = c(modsEFA_rnd1[[1]]$TLI, modsEFA_rnd1[[2]]$TLI,
+            modsEFA_rnd1[[3]]$TLI, modsEFA_rnd1[[4]]$TLI,
+            modsEFA_rnd1[[5]]$TLI),
 
-      c = c(modsEFA[[1]]$BIC, modsEFA[[2]]$BIC,
-            modsEFA[[3]]$BIC, modsEFA[[4]]$BIC,
-            modsEFA[[5]]$BIC),
+      c = c(modsEFA_rnd1[[1]]$BIC, modsEFA_rnd1[[2]]$BIC,
+            modsEFA_rnd1[[3]]$BIC, modsEFA_rnd1[[4]]$BIC,
+            modsEFA_rnd1[[5]]$BIC),
 
-      d = c(modsEFA[[1]]$RMSEA[1], modsEFA[[2]]$RMSEA[1],
-            modsEFA[[3]]$RMSEA[1], modsEFA[[4]]$RMSEA[1],
-            modsEFA[[5]]$RMSEA[1]),
+      d = c(modsEFA_rnd1[[1]]$RMSEA[1], modsEFA_rnd1[[2]]$RMSEA[1],
+            modsEFA_rnd1[[3]]$RMSEA[1], modsEFA_rnd1[[4]]$RMSEA[1],
+            modsEFA_rnd1[[5]]$RMSEA[1]),
 
-      e = c(modsEFA[[1]]$Vaccounted[2], modsEFA[[2]]$Vaccounted[3, 2],
-            modsEFA[[3]]$Vaccounted[3, 3], modsEFA[[4]]$Vaccounted[3, 4],
-            modsEFA[[5]]$Vaccounted[3, 5]),
+      e = c(modsEFA_rnd1[[1]]$Vaccounted[2], modsEFA_rnd1[[2]]$Vaccounted[3, 2],
+            modsEFA_rnd1[[3]]$Vaccounted[3, 3], modsEFA_rnd1[[4]]$Vaccounted[3, 4],
+            modsEFA_rnd1[[5]]$Vaccounted[3, 5]),
       
       row.names = c('Model 1', 'Model 2', 'Model 3', 'Model 4', 'Model 5')
       ), 
     2))
-modsFit
+modsFit_rnd1
 
 #visualize table
 library(kableExtra) #masks dplyr::group_rows
@@ -239,7 +204,7 @@ modsFit[["hum"]] %>%
   ) %>% 
   kable('html', 
         booktabs = TRUE, 
-        caption = 'EFA Model Fit Indices') %>% 
+        caption = 'EFA Model Fit Indices - Round 1') %>% 
   kable_styling(bootstrap_options = c('striped', 'HOLD_position'),
                 full_width = FALSE, 
                 position = 'center') %>% 
@@ -248,60 +213,81 @@ modsFit[["hum"]] %>%
     index = c('Human-Machine Preference' = 5),
     latex_gap_space = '.70em')
 
-fa.diagram(modsEFA[[4]], main = "WLS using Poly", digits = 3, cut = 0)
-
-
-datList[["humBest"]] = select_at(datList[["hum"]], 
-                                 vars(matches("16_R$|^HUM3|_14")))
-
-modsEFA[["round2"]] = efa_mods_fun(cor(datList[["humBest"]], method = "spearman"), 
-                                   n_models = 3)
-
-
 #factor loadings of each model
 modsEFA_loadings = list()
 
 #loop
-for (i in seq_along(modsEFA)) { 
+for (i in seq_along(modsEFA_rnd1)) { 
   modsEFA_loadings[[i]] = rownames_to_column(
     round(data.frame(
-      modsEFA[[i]][["loadings"]][]), 3),  
+      modsEFA_rnd1[[i]][["loadings"]][]), 3),  
     var = "Item") %>% 
     gather(key = "Factor", value = "Loading", -1)
 }
 
-#scale was theorized to be 1 factor...rm items with low loadings (i.e., < .4)
-datList[["humBest"]] = select_at(datList[["hum"]], vars(matches("_R")))
+fa.diagram(modsEFA_rnd1[[3]], main = "WLS using Poly - Round 1", digits = 3, 
+           cut = .5)
 
-# #add new "hum" items to list of dfs
-# datList = append(datList, list("humNew" = humNew), after = 1)
 
-#run EFA w/ 1-factor solution using df w/ redacted items
-mod_humNew = efa_mods_fun(datList[["humNew"]], n_models = 1)
-mod_humNew[[1]]$loadings #all loadings >= .40!
+datList[["humBest"]] = select(datList[["hum"]], HUM11_R, HUM2_R, HUM14_R, HUM9_R,
+                              HUM13_R, HUM6_R, HUM8_R, HUM3_R, HUM16_R, HUM1)
+
+corrList[["poly"]][["humBest"]] = polychoric(datList[["humBest"]])$rho
+
+#second iteration of models
+modsEFA_rnd2 = efa_mods_fun(corrList[["poly"]][["humBest"]], 
+                                   n_models = 3)
+
+modsFit_rnd2 = list(
+  humBest = round(
+    data.frame(
+      a = c(modsEFA_rnd2[[1]]$STATISTIC, modsEFA_rnd2[[2]]$STATISTIC,
+            modsEFA_rnd2[[3]]$STATISTIC),
+      
+      b = c(modsEFA_rnd2[[1]]$TLI, modsEFA_rnd2[[2]]$TLI,
+            modsEFA_rnd2[[3]]$TLI),
+      
+      c = c(modsEFA_rnd2[[1]]$BIC, modsEFA_rnd2[[2]]$BIC,
+            modsEFA_rnd2[[3]]$BIC),
+      
+      d = c(modsEFA_rnd2[[1]]$RMSEA[1], modsEFA_rnd2[[2]]$RMSEA[1],
+            modsEFA_rnd2[[3]]$RMSEA[1]),
+      
+      e = c(modsEFA_rnd2[[1]]$Vaccounted[2], modsEFA_rnd2[[2]]$Vaccounted[3, 2],
+            modsEFA_rnd2[[3]]$Vaccounted[3, 3]),
+      
+      row.names = c('Model 1', 'Model 2', 'Model 3')
+    ), 
+    2))
+modsFit_rnd2
 
 # Data Viz
 
 #diagram of loadings
-fa.diagram(modsEFA[["round2"]][[1]], 
+fa.diagram(modsEFA_rnd2[[3]], 
            main = "EFA 1-Factor Solution", 
-           digits = 3)
+           digits = 3,
+           cut = .5)
 
 #df of loadings
-loadings = as.data.frame(mod_humNew[[1]]$loadings[]) %>%
+loadings = as.data.frame(modsEFA_rnd2[[3]]$loadings[]) %>%
     round(3) %>%
     #rename(Factors = 1) %>%
-    add_column(.before = 1, Item = names(datList[["humNew"]])) %>%
+    add_column(.before = 1, Item = names(datList[["humBest"]])) %>%
     mutate(Item = as.factor(Item))
 
 #viz of factor loadings - all loadings are >= .4!
-gather(loadings, key = "Factor", value = "Loadings", -Item) %>% 
-  ggplot(aes(fct_inorder(Item), abs(Loadings), fill = Factor)) + 
-    geom_bar(stat = "identity", width = .8, color = "gray") +
-    coord_flip() +
+gather(loadings, key = "Factor", value = "Loadings", -Item)
+  ggplot(aes(fct_inorder(Item), 
+             abs(Loadings), 
+             fill = Factor)) + 
+  geom_bar(stat = "identity", width = .8, color = "gray") + 
+  coord_flip() + 
+  facet_wrap(~ Factor) + 
+  scale_x_discrete(limits = rev(unique(test[[1]]))) +
     labs(
-      title = "Loading Comparisons", 
-      subtitle = "1-Factor Solution", 
+      title = "Best Competing EFA Model", 
+      subtitle = "3-Factor Solution", 
       x = "Item",
       y = "Loading Strength"
       ) +
@@ -315,7 +301,6 @@ alphas = lapply(datList, psych::alpha)
 
 #cronbach alpha estimates for each construct!
 alphas[["hum"]]$total[1:2] #human-machine alpha: .83
-alphas[["humNew"]]$total[1:2] #human-machine (dropped) alpha: .85!
-alphas[["ls"]]$total[1:2] #science alpha: .88
-alphas[["sa"]]$total[1:2] #satisfaction alpha: .89
-m
+alphas[["humBest"]]$total[1:2] #human-machine (dropped) alpha: .82!
+alphas[["ls"]]$total[1:2] #science alpha: .89
+alphas[["sa"]]$total[1:2] #satisfaction alpha: .88
