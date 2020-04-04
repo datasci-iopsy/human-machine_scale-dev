@@ -225,9 +225,17 @@ for (i in seq_along(modsEFA_rnd1)) {
     gather(key = "Factor", value = "Loading", -1)
 }
 
-fa.diagram(modsEFA_rnd1[[3]], main = "WLS using Poly - Round 1", digits = 3, 
-           cut = .5)
-
+#faDiagram
+fa.diagram(modsEFA_rnd1[[3]], 
+           main = "WLS using Poly - Round 1", 
+           digits = 3, 
+           rsize = .6,
+           esize = 3,
+           size = 5,
+           cex = 1,
+           l.cex = .5,
+           cut = .4, 
+           marg = (c(.5, 2.5, 3, .5)))
 
 datList[["humBest"]] = select(datList[["hum"]], HUM11_R, HUM2_R, HUM14_R, HUM9_R,
                               HUM13_R, HUM6_R, HUM8_R, HUM3_R, HUM16_R, HUM1)
@@ -277,7 +285,7 @@ loadings = as.data.frame(modsEFA_rnd2[[3]]$loadings[]) %>%
     mutate(Item = as.factor(Item))
 
 #viz of factor loadings - all loadings are >= .4!
-gather(loadings, key = "Factor", value = "Loadings", -Item)
+gather(loadings, key = "Factor", value = "Loadings", -Item) %>% 
   ggplot(aes(fct_inorder(Item), 
              abs(Loadings), 
              fill = Factor)) + 
