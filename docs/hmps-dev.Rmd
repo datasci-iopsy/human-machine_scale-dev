@@ -1,0 +1,353 @@
+---
+title: "Survey data Analysis"
+---
+
+Survey data remains an integral part of organizational science and rightfully so. With ever-increasing means of data collection brought about by newer, faster technologies and globalization, organizations have no shortage of data - but it would be remiss to discount the value of self-report data to better understand the psychology of workers. Alas, not all surveys are created equal, or rather equally well; so, it's important to use the science of surveys to draw the appropriate inferences about the data.
+
+The full survey construction process includes the following:
+
+1. Define construct and relevant content domain (e.g., introversion, integrity, etc.)
+2. Generate items to cover content domain
+3. Assess content validity
+4. Large scale administration
+**5.** **Exploratory factor analysis**
+**6.** **Internal consistency reliability analysis (e.g., Cronbach $\alpha$)**
+7. Confirmatory factor analysis
+8. Convergent/discriminant valdiity evidence
+9. Criterion valdiity evidence
+10. Replicate steps 6 - 9 in new sample(s)
+
+In this article, Part 1 of survey analysis is explained using R and covers steps **5** and **6** specifically. Another post will address later steps so check back soon!
+
+```{r, opts1, warning=FALSE, message=FALSE, incldude=FALSE}
+knitr::opts_chunk$set(fig.width=10, fig.height=8, echo=FALSE, warning=FALSE, 
+                      message=FALSE, include=FALSE)
+
+#import custom functions
+source("../code/funs.R")
+```
+
+```{r, libs}
+#load libraries
+library(tidyverse) #masks stats::filter, lag
+library(tibble)
+library(psych) #masks ggpplot2:: %+%, alpha
+library(GGally) #masks dbplyr::nasa
+library(kableExtra) #masks dplyr::group_rows
+library(MVN)
+```
+
+```{r, read_data, warning=FALSE}
+#read in the data, skip the second row
+readFile = readLines("../data/dat_cln.csv")
+datRaw = read.csv(textConnection(readFile[-2]), header = T, sep = ",")
+
+#call 'unfactorise' function to recode chr/fcts to nums
+dat = data.frame(sapply(datRaw[, 1:32], unfactorise))
+
+#re-score reverse-coded items (5-point Likert-type scale)
+dat = mutate_at(dat, vars(contains("_R")), list(~ 6 - .)) %>% #subtract 6
+  select_at(vars(matches("HUM")))
+```
+
+```{r, cln_env}
+#keep env cln
+rm(datRaw, readFile)
+```
+
+```{r, data_glimpse, include=TRUE}
+glimpse(dat, width = 35)
+```
+
+```{r, data_summary, include=TRUE}
+summary(dat)
+```
+
+```{r, warning=FALSE, message=FALSE, include=TRUE}
+#distributions
+(pairsPlot = GGally::ggpairs(data = dat,
+                    upper = "blank",
+                    diag = list(continuous = wrap("densityDiag")),
+                    lower = list(continuous = wrap(ggally_smooth_lm)),
+                    title = "Pairs Plot of Human-Machine Items"))
+```
+
+```{r, pairsPlot, warning=FALSE, message=FALSE, include=TRUE}
+# lapply(list(dat[, 1:8], dat[, 9:16]), 
+#        function(x) MVN::mvn(data = x, univariatePlot = "histogram")[4])
+
+mvn(data = dat, 
+    univariatePlot = "histogram")
+```
+
+```{r, warning=FALSE}
+corrs = psych::polychoric(dat)
+```
+
+```{r, corrsPlot, warning=FALSE, message=FALSE, include=TRUE}
+# plot function for correlations
+GGally::ggcorr(data = NULL, 
+       cor_matrix = corrs[["rho"]], 
+       size = 2,
+       hjust = .75,
+       nbreaks = 7,
+       palette = "RdYlBu",
+       label = TRUE, 
+       label_color = "black",
+       digits = 2,
+       #label_alpha = .3, 
+       label_round = 2, 
+       label_size = 1.85, 
+       layout.exp = 0.2) + 
+  theme(legend.position = "none")
+  #labs(title = "Polychoric Item Correlations")
+```
+
+```{r, screePlot, warning=FALSE, message=FALSE, include=TRUE}
+#parallel analysis of "hum" construct items
+psych::fa.parallel(corrs[["rho"]], 
+            n.obs = nrow(dat),
+            fm = "wls", 
+            fa = "fa", 
+            main = "Scree Plot of Items - Poly & WLS", 
+            ylabel = "Eigenvalues of Factors")
+  #suggestions: fa = 4 factors & pc = 3..."theoreticized" a 1-factor scale
+```
+
+```{r, efaMods, warning=FALSE, message=FALSE, include=TRUE}
+#function to run multiple efa models
+efa_mods_fun = function(r, n_models = NULL, ...){
+    
+    if (!is.matrix(r))
+        stop("r must be a matrix of covariances!")
+    
+    efa_models = list()
+    
+    for (i in seq(n_models)){
+        efa_models[[i]] = fa(r, 
+                             n.obs = nrow(dat),
+                             nfactors = i, 
+                             rotate = "oblimin", 
+                             # n.iter = 1000,
+                             fm = "wls", 
+                             max.iter = 5000)
+    }
+    return(efa_models)
+}
+
+#run series of models; 1:5-factor solutions
+modsEFA_rnd1 = efa_mods_fun(corrs[["rho"]], n_models = 5)
+```
+
+```{r, efaFits, warning=FALSE, message=FALSE, include=TRUE}
+#fit indices - round 1
+(
+  modsFit_rnd1 = round(
+    data.frame(
+        a = c(modsEFA_rnd1[[1]]$STATISTIC, modsEFA_rnd1[[2]]$STATISTIC,
+              modsEFA_rnd1[[3]]$STATISTIC, modsEFA_rnd1[[4]]$STATISTIC, 
+              modsEFA_rnd1[[5]]$STATISTIC), 
+        
+        b = c(modsEFA_rnd1[[1]]$TLI, modsEFA_rnd1[[2]]$TLI, 
+              modsEFA_rnd1[[3]]$TLI, modsEFA_rnd1[[4]]$TLI, 
+              modsEFA_rnd1[[5]]$TLI), 
+        
+        c = c(modsEFA_rnd1[[1]]$BIC, modsEFA_rnd1[[2]]$BIC, 
+              modsEFA_rnd1[[3]]$BIC, modsEFA_rnd1[[4]]$BIC, 
+              modsEFA_rnd1[[5]]$BIC), 
+        
+        d = c(modsEFA_rnd1[[1]]$RMSEA[1], modsEFA_rnd1[[2]]$RMSEA[1], 
+              modsEFA_rnd1[[3]]$RMSEA[1], modsEFA_rnd1[[4]]$RMSEA[1], 
+              modsEFA_rnd1[[5]]$RMSEA[1]), 
+        
+        e = c(modsEFA_rnd1[[1]]$Vaccounted[2], modsEFA_rnd1[[2]]$Vaccounted[3, 2], 
+              modsEFA_rnd1[[3]]$Vaccounted[3, 3], modsEFA_rnd1[[4]]$Vaccounted[3, 4],
+              modsEFA_rnd1[[5]]$Vaccounted[3, 5]), 
+        
+        row.names = c('Model 1', 'Model 2', 'Model 3', 'Model 4', 'Model 5')
+        ), 
+      2)
+  )
+```
+
+```{r, efaFits_kable, warning=FALSE, message=FALSE, include=TRUE}
+#visualize table
+
+modsFit_rnd1 %>% 
+  rownames_to_column() %>% 
+  rename(
+    'Model Solution(s)' = rowname, 
+    'X\u00B2' = a,
+    'TLI' = b, 
+    'BIC' = c, 
+    'RMSEA' = d, 
+    'Var Explained' = e
+  ) %>% 
+  mutate(
+    'Model Solution(s)' = c('1 Factor', '2 Factors', '3 Factors', 
+                            '4 Factors', '5 Factors')
+  ) %>% 
+  kableExtra::kable('html', 
+        booktabs = TRUE, 
+        caption = 'EFA Model Fit Indices - Round 1') %>% 
+  kable_styling(bootstrap_options = c('striped', 'HOLD_position'),
+                full_width = FALSE, 
+                position = 'center') %>% 
+  column_spec(1, width = '8cm') %>% 
+  pack_rows(
+    index = c('HMPS ' = 5),
+    latex_gap_space = '.70em') %>% 
+  row_spec(3, bold = T, color = "white", background = "#D7261E")
+```
+
+```{r, faDiagram, warning=FALSE, message=FALSE, include=TRUE}
+psych::fa.diagram(modsEFA_rnd1[[3]], 
+           main = "WLS using Poly - Round 1", 
+           digits = 3, 
+           rsize = .6,
+           esize = 3,
+           size = 5,
+           cex = .6,
+           l.cex = .2,
+           cut = .4, 
+           marg = (c(.5, 2.5, 3, .5)))
+```
+
+```{r, humBest, warning=FALSE, message=FALSE}
+datNew = select(dat, HUM11_R, HUM2_R, HUM14_R, HUM9_R,HUM13_R, HUM6_R, HUM8_R, 
+                HUM3_R, HUM16_R, HUM1)
+
+corrsNew = psych::polychoric(datNew)
+```
+
+```{r, efaFits_rnd2, warning=FALSE, message=FALSE}
+#second iteration of models
+modsEFA_rnd2 = efa_mods_fun(corrsNew[["rho"]], n_models = 3)
+
+modsFit_rnd2 =
+  round(
+    data.frame(
+      a = c(modsEFA_rnd2[[1]]$STATISTIC, modsEFA_rnd2[[2]]$STATISTIC,
+            modsEFA_rnd2[[3]]$STATISTIC),
+      
+      b = c(modsEFA_rnd2[[1]]$TLI, modsEFA_rnd2[[2]]$TLI,
+            modsEFA_rnd2[[3]]$TLI),
+      
+      c = c(modsEFA_rnd2[[1]]$BIC, modsEFA_rnd2[[2]]$BIC,
+            modsEFA_rnd2[[3]]$BIC),
+      
+      d = c(modsEFA_rnd2[[1]]$RMSEA[1], modsEFA_rnd2[[2]]$RMSEA[1],
+            modsEFA_rnd2[[3]]$RMSEA[1]),
+      
+      e = c(modsEFA_rnd2[[1]]$Vaccounted[2], modsEFA_rnd2[[2]]$Vaccounted[3, 2],
+            modsEFA_rnd2[[3]]$Vaccounted[3, 3]),
+      
+      row.names = c('Model 1', 'Model 2', 'Model 3')
+      ), 
+    2)
+modsFit_rnd2
+```
+
+```{r, echo=FALSE, message=FALSE, efaFits_kable2, warning=FALSE, include=TRUE}
+modsFit_rnd2 %>% 
+  rownames_to_column() %>% 
+  rename(
+    'Model Solution(s)' = rowname, 
+    'X\u00B2' = a,
+    'TLI' = b, 
+    'BIC' = c, 
+    'RMSEA' = d, 
+    'Var Explained' = e
+  ) %>% 
+  mutate(
+    'Model Solution(s)' = c('1 Factor', '2 Factors', '3 Factors')
+  ) %>% 
+  kableExtra::kable('html', 
+        booktabs = TRUE, 
+        caption = 'EFA Model Fit Indices - Round 2') %>% 
+  kable_styling(bootstrap_options = c('striped', 'HOLD_position'),
+                full_width = FALSE, 
+                position = 'center') %>% 
+  column_spec(1, width = '8cm') %>% 
+  pack_rows(
+    index = c('HMPS ' = 3),
+    latex_gap_space = '.70em') %>% 
+  row_spec(3, bold = T, color = "white", background = "#D7261E")
+```
+
+```{r, faDiagram2, warning=FALSE, message=FALSE, echo=FALSE, include=TRUE}
+psych::fa.diagram(modsEFA_rnd2[[3]], 
+           main = "WLS using Poly - Round 2", 
+           digits = 3, 
+           rsize = .6,
+           esize = 3,
+           size = 5,
+           cex = .6,
+           l.cex = .2,
+           cut = .4, 
+           marg = (c(.5, 2.5, 3, .5)))
+```
+
+```{r}
+#factor loadings of each model
+modsEFA_loadings = list()
+
+#loop
+for (i in seq_along(modsEFA_rnd2)) { 
+  modsEFA_loadings[[i]] = rownames_to_column(
+    round(data.frame(
+      modsEFA_rnd2[[i]][["loadings"]][]), 3),  
+    var = "Item") %>% 
+    gather(key = "Factor", value = "Loading", -1)
+}
+```
+
+```{r, warning=FALSE, message=FALSE, include=TRUE}
+#viz of factor loadings
+ggplot(data = modsEFA_loadings[[3]], 
+       aes(fct_inorder(Item), 
+           abs(Loading), 
+           fill = Factor)
+       ) + 
+  geom_bar(stat = "identity", width = .8, color = "gray") +
+  coord_flip() +
+  facet_wrap(~ Factor) +
+  #scale_x_discrete(limits = rev(unique(loadings[[1]]))) +
+    labs(
+      title = "Best Competing Model",
+      subtitle = "3-Factor Solution",
+      x = "Item",
+      y = "Loading Strength"
+      ) +
+    theme_gray(base_size = 10) +
+    theme(legend.position = "right") + 
+  geom_hline(yintercept = .45, linetype = "dashed", color = "red", size = .65)
+```
+
+```{r, reliability, warning=FALSE, message=FALSE, include=TRUE}
+# Reliability Analysis
+
+#compute coefficient alphas
+alphas = sapply(list(dat, datNew), psych::alpha)
+
+#cronbach alpha estimates for each construct!
+data.frame(alphas[[1]][1], #hm alpha: .83
+           alphas[[15]][1]) %>%  #hm (dropped) alpha: .82!
+  rename("hum" = 1, "humNew" = 2) %>%
+  round(2)
+```
+
+
+```{r}
+# library(RWordPress)
+# library(knitr)
+# 
+# opts_knit$set(upload.fun = function(file){uploadFile(file)$url})
+# options(
+#   WordpressLogin = c(datasci_iopsy = "th3l0n3r4ng3r!"),
+#   WordpressURL = "https://datascienceplus.com/xmlrpc.php"
+# )
+# knit2wp("~/Dropbox/Stats_n_Programming/R Code/human_machine/docs/hmps-dev.Rmd",
+#   title = "Using R Develop and Analyze Survey Data",
+#   publish = FALSE)
+```
